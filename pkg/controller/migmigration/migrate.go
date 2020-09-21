@@ -94,6 +94,7 @@ func (r *ReconcileMigMigration) migrate(migration *migapi.MigMigration) (time.Du
 
 	// Running
 	step, n, total := task.Itinerary.progressReport(task.Phase)
+	currStep := task.Itinerary.getCurrentStep(task.Phase, task.Itinerary.Name)
 	message := fmt.Sprintf(RunningMessage, n, total)
 	migration.Status.SetCondition(migapi.Condition{
 		Type:     Running,
@@ -101,6 +102,7 @@ func (r *ReconcileMigMigration) migrate(migration *migapi.MigMigration) (time.Du
 		Reason:   step,
 		Category: Advisory,
 		Message:  message,
+		Step:     currStep,
 	})
 
 	return task.Requeue, nil

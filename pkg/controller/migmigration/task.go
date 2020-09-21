@@ -76,6 +76,24 @@ const (
 	Completed                       = "Completed"
 )
 
+// Steps
+const (
+	StepPrepare     = "Prepare"
+	Backup          = "Backup"
+	VolumeBackup    = "VolumeBackup"
+	VolumeRestore   = "VolumeRestore"
+	ResourceRestore = "ResourceRestore"
+	Final           = "Final"
+)
+
+// Itinerary names
+const (
+	ItineraryStage  = "Stage"
+	ItineraryFinal  = "Final"
+	ItineraryCancel = "Cancel"
+	ItineraryFailed = "Failed"
+)
+
 // Flags
 const (
 	Quiesce      = 0x01 // Only when QuiescePods (true).
@@ -184,6 +202,87 @@ var FailedItinerary = Itinerary{
 		{phase: Completed},
 	},
 }
+var StageMap = map[string]string{
+	Created:                         StepPrepare,
+	Started:                         StepPrepare,
+	Prepare:                         StepPrepare,
+	EnsureCloudSecretPropagated:     StepPrepare,
+	EnsureStagePodsFromRunning:      VolumeBackup,
+	EnsureStagePodsFromTemplates:    VolumeBackup,
+	EnsureStagePodsFromOrphanedPVCs: VolumeBackup,
+	StagePodsCreated:                VolumeBackup,
+	AnnotateResources:               VolumeBackup,
+	RestartRestic:                   VolumeBackup,
+	ResticRestarted:                 VolumeBackup,
+	QuiesceApplications:             VolumeBackup,
+	EnsureQuiesced:                  VolumeBackup,
+	EnsureStageBackup:               VolumeBackup,
+	StageBackupCreated:              VolumeBackup,
+	EnsureStageBackupReplicated:     VolumeBackup,
+	EnsureStageRestore:              VolumeRestore,
+	StageRestoreCreated:             VolumeRestore,
+	EnsureStagePodsDeleted:          VolumeRestore,
+	EnsureStagePodsTerminated:       VolumeRestore,
+	EnsureAnnotationsDeleted:        Final,
+	Completed:                       Final,
+}
+
+var FinalMap = map[string]string{
+	Created:                         StepPrepare,
+	Started:                         StepPrepare,
+	Prepare:                         StepPrepare,
+	EnsureCloudSecretPropagated:     StepPrepare,
+	PreBackupHooks: 				 Backup,
+	EnsureInitialBackup: 			 Backup,
+	InitialBackupCreated: 			 Backup,
+	EnsureStagePodsFromRunning:      VolumeBackup,
+	EnsureStagePodsFromTemplates:    VolumeBackup,
+	EnsureStagePodsFromOrphanedPVCs: VolumeBackup,
+	StagePodsCreated:                VolumeBackup,
+	AnnotateResources:               VolumeBackup,
+	RestartRestic:                   VolumeBackup,
+	ResticRestarted:                 VolumeBackup,
+	QuiesceApplications:             VolumeBackup,
+	EnsureQuiesced:                  VolumeBackup,
+	EnsureStageBackup:               VolumeBackup,
+	StageBackupCreated:              VolumeBackup,
+	EnsureStageBackupReplicated:     VolumeBackup,
+	EnsureStageRestore:              VolumeRestore,
+	StageRestoreCreated:             VolumeRestore,
+	EnsureStagePodsDeleted:          VolumeRestore,
+	EnsureStagePodsTerminated:       VolumeRestore,
+	EnsureAnnotationsDeleted: 		 ResourceRestore,
+	EnsureInitialBackupReplicated:   ResourceRestore,
+	PostBackupHooks: 				 ResourceRestore,
+	PreRestoreHooks: 				 ResourceRestore,
+	EnsureFinalRestore: 			 ResourceRestore,
+	FinalRestoreCreated: 			 ResourceRestore,
+	PostRestoreHooks: 				 ResourceRestore,
+	Verification: 					 Final,
+	Completed:                       Final,
+}
+
+var CancelMap = map[string]string{
+	Canceling: Final,
+	DeleteBackups: Final,
+	DeleteRestores: Final,
+	EnsureStagePodsDeleted: Final,
+	EnsureAnnotationsDeleted: Final,
+	DeleteMigrated: Final,
+	EnsureMigratedDeleted: Final,
+	UnQuiesceApplications: Final,
+	Canceled: Final,
+}
+
+var FailedMap = map[string]string{
+	MigrationFailed: Final,
+	EnsureStagePodsDeleted: Final,
+	EnsureAnnotationsDeleted: Final,
+	DeleteMigrated: Final,
+	EnsureMigratedDeleted: Final,
+	UnQuiesceApplications: Final,
+	Completed: Final,
+}
 
 // Step
 type Step struct {
@@ -208,6 +307,21 @@ func (r Itinerary) progressReport(phase string) (string, int, int) {
 	}
 
 	return phase, n, total
+}
+
+func (r Itinerary) getCurrentStep(phase string, name string) string {
+	step := ""
+	switch name {
+	case ItineraryStage:
+		step = StageMap[phase]
+	case ItineraryCancel:
+		step = CancelMap[phase]
+	case ItineraryFailed:
+		step = FailedMap[phase]
+	case ItineraryFinal:
+		step = FinalMap[phase]
+	}
+	return step
 }
 
 // A Velero task that provides the complete backup & restore workflow.
