@@ -2,6 +2,7 @@ package migmigration
 
 import (
 	"context"
+	//"strconv"
 	"time"
 
 	mapset "github.com/deckarep/golang-set"
@@ -86,14 +87,6 @@ const (
 	Final           = "Final"
 )
 
-// Itinerary names
-const (
-	ItineraryStage  = "Stage"
-	ItineraryFinal  = "Final"
-	ItineraryCancel = "Cancel"
-	ItineraryFailed = "Failed"
-)
-
 // Flags
 const (
 	Quiesce      = 0x01 // Only when QuiescePods (true).
@@ -111,217 +104,190 @@ type Itinerary struct {
 var StageItinerary = Itinerary{
 	Name: "Stage",
 	Steps: []Step{
-		{phase: Created},
-		{phase: Started},
-		{phase: Prepare},
-		{phase: EnsureCloudSecretPropagated},
-		{phase: EnsureStagePodsFromRunning, all: HasPVs},
-		{phase: EnsureStagePodsFromTemplates, all: HasPVs},
-		{phase: EnsureStagePodsFromOrphanedPVCs, all: HasPVs},
-		{phase: StagePodsCreated, all: HasStagePods},
-		{phase: AnnotateResources, any: HasPVs | HasISs},
-		{phase: RestartRestic, all: HasStagePods},
-		{phase: ResticRestarted, all: HasStagePods},
-		{phase: QuiesceApplications, all: Quiesce},
-		{phase: EnsureQuiesced, all: Quiesce},
-		{phase: EnsureStageBackup, any: HasPVs | HasISs},
-		{phase: StageBackupCreated, any: HasPVs | HasISs},
-		{phase: EnsureStageBackupReplicated, any: HasPVs | HasISs},
-		{phase: EnsureStageRestore, any: HasPVs | HasISs},
-		{phase: StageRestoreCreated, any: HasPVs | HasISs},
-		{phase: EnsureStagePodsDeleted, all: HasStagePods},
-		{phase: EnsureStagePodsTerminated, all: HasStagePods},
-		{phase: EnsureAnnotationsDeleted, any: HasPVs | HasISs},
-		{phase: Completed},
+		{
+			Name: StepPrepare,
+			Phases: []Phases{
+				{phase: Created},
+				{phase: Started},
+				{phase: Prepare},
+				{phase: EnsureCloudSecretPropagated},
+			},
+		},
+		{
+			Name: VolumeBackup,
+			Phases: []Phases{
+				{phase: EnsureStagePodsFromRunning, all: HasPVs},
+				{phase: EnsureStagePodsFromTemplates, all: HasPVs},
+				{phase: EnsureStagePodsFromOrphanedPVCs, all: HasPVs},
+				{phase: StagePodsCreated, all: HasStagePods},
+				{phase: AnnotateResources, any: HasPVs | HasISs},
+				{phase: RestartRestic, all: HasStagePods},
+				{phase: ResticRestarted, all: HasStagePods},
+				{phase: QuiesceApplications, all: Quiesce},
+				{phase: EnsureQuiesced, all: Quiesce},
+				{phase: EnsureStageBackup, any: HasPVs | HasISs},
+				{phase: StageBackupCreated, any: HasPVs | HasISs},
+				{phase: EnsureStageBackupReplicated, any: HasPVs | HasISs},
+			},
+		},
+		{
+			Name: VolumeRestore,
+			Phases: []Phases{
+				{phase: EnsureStageRestore, any: HasPVs | HasISs},
+				{phase: StageRestoreCreated, any: HasPVs | HasISs},
+				{phase: EnsureStagePodsDeleted, all: HasStagePods},
+				{phase: EnsureStagePodsTerminated, all: HasStagePods},
+			},
+		},
+		{
+			Name: Final,
+			Phases: []Phases{
+				{phase: EnsureAnnotationsDeleted, any: HasPVs | HasISs},
+				{phase: Completed},
+			},
+		},
 	},
 }
 
 var FinalItinerary = Itinerary{
 	Name: "Final",
 	Steps: []Step{
-		{phase: Created},
-		{phase: Started},
-		{phase: Prepare},
-		{phase: EnsureCloudSecretPropagated},
-		{phase: PreBackupHooks},
-		{phase: EnsureInitialBackup},
-		{phase: InitialBackupCreated},
-		{phase: EnsureStagePodsFromRunning, all: HasPVs},
-		{phase: EnsureStagePodsFromTemplates, all: HasPVs},
-		{phase: EnsureStagePodsFromOrphanedPVCs, all: HasPVs},
-		{phase: StagePodsCreated, all: HasStagePods},
-		{phase: AnnotateResources, any: HasPVs | HasISs},
-		{phase: RestartRestic, all: HasStagePods},
-		{phase: ResticRestarted, all: HasStagePods},
-		{phase: QuiesceApplications, all: Quiesce},
-		{phase: EnsureQuiesced, all: Quiesce},
-		{phase: EnsureStageBackup, any: HasPVs | HasISs},
-		{phase: StageBackupCreated, any: HasPVs | HasISs},
-		{phase: EnsureStageBackupReplicated, any: HasPVs | HasISs},
-		{phase: EnsureStageRestore, any: HasPVs | HasISs},
-		{phase: StageRestoreCreated, any: HasPVs | HasISs},
-		{phase: EnsureStagePodsDeleted, all: HasStagePods},
-		{phase: EnsureStagePodsTerminated, all: HasStagePods},
-		{phase: EnsureAnnotationsDeleted, any: HasPVs | HasISs},
-		{phase: EnsureInitialBackupReplicated},
-		{phase: PostBackupHooks},
-		{phase: PreRestoreHooks},
-		{phase: EnsureFinalRestore},
-		{phase: FinalRestoreCreated},
-		{phase: PostRestoreHooks},
-		{phase: Verification, all: HasVerify},
-		{phase: Completed},
+		{
+			Name: Prepare,
+			Phases: []Phases{
+				{phase: Created},
+				{phase: Started},
+				{phase: Prepare},
+				{phase: EnsureCloudSecretPropagated},
+			},
+		},
+		{
+			Name: Backup,
+			Phases: []Phases{
+				{phase: PreBackupHooks},
+				{phase: EnsureInitialBackup},
+				{phase: InitialBackupCreated},
+			},
+		},
+		{
+			Name: VolumeBackup,
+			Phases: []Phases{
+				{phase: EnsureStagePodsFromRunning, all: HasPVs},
+				{phase: EnsureStagePodsFromTemplates, all: HasPVs},
+				{phase: EnsureStagePodsFromOrphanedPVCs, all: HasPVs},
+				{phase: StagePodsCreated, all: HasStagePods},
+				{phase: AnnotateResources, any: HasPVs | HasISs},
+				{phase: RestartRestic, all: HasStagePods},
+				{phase: ResticRestarted, all: HasStagePods},
+				{phase: QuiesceApplications, all: Quiesce},
+				{phase: EnsureQuiesced, all: Quiesce},
+				{phase: EnsureStageBackup, any: HasPVs | HasISs},
+				{phase: StageBackupCreated, any: HasPVs | HasISs},
+				{phase: EnsureStageBackupReplicated, any: HasPVs | HasISs},
+			},
+		},
+		{
+			Name: VolumeRestore,
+			Phases: []Phases{
+				{phase: EnsureStageRestore, any: HasPVs | HasISs},
+				{phase: StageRestoreCreated, any: HasPVs | HasISs},
+				{phase: EnsureStagePodsDeleted, all: HasStagePods},
+				{phase: EnsureStagePodsTerminated, all: HasStagePods},
+			},
+		},
+		{
+			Name: ResourceRestore,
+			Phases: []Phases{
+				{phase: EnsureAnnotationsDeleted, any: HasPVs | HasISs},
+				{phase: EnsureInitialBackupReplicated},
+				{phase: PostBackupHooks},
+				{phase: PreRestoreHooks},
+				{phase: EnsureFinalRestore},
+				{phase: FinalRestoreCreated},
+				{phase: PostRestoreHooks},
+			},
+		},
+		{
+			Name: Final,
+			Phases: []Phases{
+				{phase: Verification, all: HasVerify},
+				{phase: Completed},
+			},
+		},
 	},
 }
 
 var CancelItinerary = Itinerary{
 	Name: "Cancel",
 	Steps: []Step{
-		{phase: Canceling},
-		{phase: DeleteBackups},
-		{phase: DeleteRestores},
-		{phase: EnsureStagePodsDeleted, all: HasStagePods},
-		{phase: EnsureAnnotationsDeleted, any: HasPVs | HasISs},
-		{phase: DeleteMigrated},
-		{phase: EnsureMigratedDeleted},
-		{phase: UnQuiesceApplications, all: Quiesce},
-		{phase: Canceled},
-		{phase: Completed},
+		{
+			Name: Final,
+			Phases: []Phases{
+				{phase: Canceling},
+				{phase: DeleteBackups},
+				{phase: DeleteRestores},
+				{phase: EnsureStagePodsDeleted, all: HasStagePods},
+				{phase: EnsureAnnotationsDeleted, any: HasPVs | HasISs},
+				{phase: DeleteMigrated},
+				{phase: EnsureMigratedDeleted},
+				{phase: UnQuiesceApplications, all: Quiesce},
+				{phase: Canceled},
+				{phase: Completed},
+			},
+		},
 	},
 }
 
 var FailedItinerary = Itinerary{
 	Name: "Failed",
 	Steps: []Step{
-		{phase: MigrationFailed},
-		{phase: EnsureStagePodsDeleted, all: HasStagePods},
-		{phase: EnsureAnnotationsDeleted, any: HasPVs | HasISs},
-		{phase: DeleteMigrated},
-		{phase: EnsureMigratedDeleted},
-		{phase: UnQuiesceApplications, all: Quiesce},
-		{phase: Completed},
+		{
+			Name: Final,
+			Phases: []Phases{
+				{phase: MigrationFailed},
+				{phase: EnsureStagePodsDeleted, all: HasStagePods},
+				{phase: EnsureAnnotationsDeleted, any: HasPVs | HasISs},
+				{phase: DeleteMigrated},
+				{phase: EnsureMigratedDeleted},
+				{phase: UnQuiesceApplications, all: Quiesce},
+				{phase: Completed},
+			},
+		},
 	},
-}
-var StageMap = map[string]string{
-	Created:                         StepPrepare,
-	Started:                         StepPrepare,
-	Prepare:                         StepPrepare,
-	EnsureCloudSecretPropagated:     StepPrepare,
-	EnsureStagePodsFromRunning:      VolumeBackup,
-	EnsureStagePodsFromTemplates:    VolumeBackup,
-	EnsureStagePodsFromOrphanedPVCs: VolumeBackup,
-	StagePodsCreated:                VolumeBackup,
-	AnnotateResources:               VolumeBackup,
-	RestartRestic:                   VolumeBackup,
-	ResticRestarted:                 VolumeBackup,
-	QuiesceApplications:             VolumeBackup,
-	EnsureQuiesced:                  VolumeBackup,
-	EnsureStageBackup:               VolumeBackup,
-	StageBackupCreated:              VolumeBackup,
-	EnsureStageBackupReplicated:     VolumeBackup,
-	EnsureStageRestore:              VolumeRestore,
-	StageRestoreCreated:             VolumeRestore,
-	EnsureStagePodsDeleted:          VolumeRestore,
-	EnsureStagePodsTerminated:       VolumeRestore,
-	EnsureAnnotationsDeleted:        Final,
-	Completed:                       Final,
-}
-
-var FinalMap = map[string]string{
-	Created:                         StepPrepare,
-	Started:                         StepPrepare,
-	Prepare:                         StepPrepare,
-	EnsureCloudSecretPropagated:     StepPrepare,
-	PreBackupHooks: 				 Backup,
-	EnsureInitialBackup: 			 Backup,
-	InitialBackupCreated: 			 Backup,
-	EnsureStagePodsFromRunning:      VolumeBackup,
-	EnsureStagePodsFromTemplates:    VolumeBackup,
-	EnsureStagePodsFromOrphanedPVCs: VolumeBackup,
-	StagePodsCreated:                VolumeBackup,
-	AnnotateResources:               VolumeBackup,
-	RestartRestic:                   VolumeBackup,
-	ResticRestarted:                 VolumeBackup,
-	QuiesceApplications:             VolumeBackup,
-	EnsureQuiesced:                  VolumeBackup,
-	EnsureStageBackup:               VolumeBackup,
-	StageBackupCreated:              VolumeBackup,
-	EnsureStageBackupReplicated:     VolumeBackup,
-	EnsureStageRestore:              VolumeRestore,
-	StageRestoreCreated:             VolumeRestore,
-	EnsureStagePodsDeleted:          VolumeRestore,
-	EnsureStagePodsTerminated:       VolumeRestore,
-	EnsureAnnotationsDeleted: 		 ResourceRestore,
-	EnsureInitialBackupReplicated:   ResourceRestore,
-	PostBackupHooks: 				 ResourceRestore,
-	PreRestoreHooks: 				 ResourceRestore,
-	EnsureFinalRestore: 			 ResourceRestore,
-	FinalRestoreCreated: 			 ResourceRestore,
-	PostRestoreHooks: 				 ResourceRestore,
-	Verification: 					 Final,
-	Completed:                       Final,
-}
-
-var CancelMap = map[string]string{
-	Canceling: Final,
-	DeleteBackups: Final,
-	DeleteRestores: Final,
-	EnsureStagePodsDeleted: Final,
-	EnsureAnnotationsDeleted: Final,
-	DeleteMigrated: Final,
-	EnsureMigratedDeleted: Final,
-	UnQuiesceApplications: Final,
-	Canceled: Final,
-}
-
-var FailedMap = map[string]string{
-	MigrationFailed: Final,
-	EnsureStagePodsDeleted: Final,
-	EnsureAnnotationsDeleted: Final,
-	DeleteMigrated: Final,
-	EnsureMigratedDeleted: Final,
-	UnQuiesceApplications: Final,
-	Completed: Final,
 }
 
 // Step
 type Step struct {
+	Name   string
+	Phases []Phases
+}
+
+// Phases
+type Phases struct {
 	// A phase name.
 	phase string
-	// Step included when ALL flags evaluate true.
+	// Phases included when ALL flags evaluate true.
 	all uint8
-	// Step included when ANY flag evaluates true.
+	// Phases included when ANY flag evaluates true.
 	any uint8
 }
 
 // Get a progress report.
 // Returns: phase, n, total.
-func (r Itinerary) progressReport(phase string) (string, int, int) {
+func (r Itinerary) progressReport(phase string) (string, int, int, string) {
 	n := 0
-	total := len(r.Steps)
-	for i, step := range r.Steps {
-		if step.phase == phase {
-			n = i + 1
-			break
+	total := 0
+	currStep := ""
+	for j := 0; j < len(r.Steps); j++ {
+		for i, step := range r.Steps[j].Phases {
+			if step.phase == phase {
+				n = total + i + 1
+				currStep = r.Steps[j].Name
+			}
 		}
+		total += len(r.Steps[j].Phases)
 	}
-
-	return phase, n, total
-}
-
-func (r Itinerary) getCurrentStep(phase string, name string) string {
-	step := ""
-	switch name {
-	case ItineraryStage:
-		step = StageMap[phase]
-	case ItineraryCancel:
-		step = CancelMap[phase]
-	case ItineraryFailed:
-		step = FailedMap[phase]
-	case ItineraryFinal:
-		step = FinalMap[phase]
-	}
-	return step
+	return phase, n, total, currStep
 }
 
 // A Velero task that provides the complete backup & restore workflow.
@@ -855,7 +821,7 @@ func (t *Task) init() error {
 		t.Itinerary = FinalItinerary
 	}
 	if t.Owner.Status.Itinerary != t.Itinerary.Name {
-		t.Phase = t.Itinerary.Steps[0].phase
+		t.Phase = t.Itinerary.Steps[0].Phases[0].phase
 	}
 
 	hasImageStreams, err := t.hasImageStreams()
@@ -877,8 +843,14 @@ func (t *Task) init() error {
 
 // Advance the task to the next phase.
 func (t *Task) next() error {
+	var allPhase []Phases
+	for _, s := range t.Itinerary.Steps {
+		for _, p := range s.Phases {
+			allPhase = append(allPhase, p)
+		}
+	}
 	current := -1
-	for i, step := range t.Itinerary.Steps {
+	for i, step := range allPhase {
 		if step.phase != t.Phase {
 			continue
 		}
@@ -889,8 +861,8 @@ func (t *Task) next() error {
 		t.Phase = Completed
 		return nil
 	}
-	for n := current + 1; n < len(t.Itinerary.Steps); n++ {
-		next := t.Itinerary.Steps[n]
+	for n := current + 1; n < len(allPhase); n++ {
+		next := allPhase[n]
 		flag, err := t.allFlags(next)
 		if err != nil {
 			return liberr.Wrap(err)
@@ -908,12 +880,52 @@ func (t *Task) next() error {
 		t.Phase = next.phase
 		return nil
 	}
+	//currentStep := -1
+	//currentPhase := -1
+	//for i, step := range t.Itinerary.Steps {
+	//	for j, phases := range step.Phases {
+	//		if phases.phase != t.Phase {
+	//			continue
+	//		}
+	//		currentPhase = j
+	//		currentStep = i
+	//		log.Info("Step and Phase " + strconv.Itoa(currentStep) + " " + strconv.Itoa(currentPhase) + " " + phases.phase + " " + strconv.Itoa(len(t.Itinerary.Steps)))
+	//		break
+	//	}
+	//}
+	//if currentStep == -1 && currentPhase == -1 {
+	//	t.Phase = Completed
+	//	return nil
+	//}
+	//for n := currentStep; n < len(t.Itinerary.Steps); n++ {
+	//	for m := currentPhase + 1; m < len(t.Itinerary.Steps[n].Phases); m++ {
+	//		next := t.Itinerary.Steps[n].Phases[m]
+	//		log.Info("Next phase " + next.phase)
+	//		flag, err := t.allFlags(next)
+	//		if err != nil {
+	//			return liberr.Wrap(err)
+	//		}
+	//		if !flag {
+	//			continue
+	//		}
+	//		flag, err = t.anyFlags(next)
+	//		if err != nil {
+	//			return liberr.Wrap(err)
+	//		}
+	//		if !flag {
+	//			continue
+	//		}
+	//		t.Phase = next.phase
+	//		return nil
+	//	}
+	//	log.Info("Current Step: " + strconv.Itoa(n))
+	//}
 	t.Phase = Completed
 	return nil
 }
 
 // Evaluate `all` flags.
-func (t *Task) allFlags(step Step) (bool, error) {
+func (t *Task) allFlags(step Phases) (bool, error) {
 	if step.all&HasPVs != 0 && !t.hasPVs() {
 		return false, nil
 	}
@@ -938,7 +950,7 @@ func (t *Task) allFlags(step Step) (bool, error) {
 }
 
 // Evaluate `any` flags.
-func (t *Task) anyFlags(step Step) (bool, error) {
+func (t *Task) anyFlags(step Phases) (bool, error) {
 	if step.any&HasPVs != 0 && t.hasPVs() {
 		return true, nil
 	}
