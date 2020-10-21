@@ -52,9 +52,16 @@ type Condition struct {
 	Message            string      `json:"message,omitempty"`
 	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
 	Durable            bool        `json:"durable,omitempty"`
-	Progress           []string    `json:"progress,omitempty"`
+	Progress           []Progress  `json:"progress,omitempty"`
 	Items              []string    `json:"-"`
 	staged             bool
+}
+
+type Progress struct {
+	Message          string
+	CreatedTimestamp *metav1.Time
+	LastUpdated      *metav1.Time
+	RawProgress      map[string]string
 }
 
 // Update this condition with another's fields.

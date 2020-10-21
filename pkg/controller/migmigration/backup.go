@@ -159,41 +159,63 @@ func (t Task) getBackup(labels map[string]string) (*velero.Backup, error) {
 	return nil, nil
 }
 
+func (t *Task) Message(pvb velero.PodVolumeBackup, msg string) migapi.Progress {
+	progress := migapi.Progress{}
+	progress.Message = msg
+	progress.CreatedTimestamp = pvb.Status.StartTimestamp
+	if pvb.Status.CompletionTimestamp != nil {
+		progress.LastUpdated = pvb.Status.CompletionTimestamp
+	} else {
+		progress.LastUpdated = &metav1.Time{Time: time.Now()}
+	}
+	progress.RawProgress = map[string]string{
+		"Kind":      pvb.Kind,
+		"Name":      pvb.Name,
+		"Namespace": pvb.Namespace,
+	}
+	if pvb.Status.Progress != (velero.PodVolumeOperationProgress{}) {
+		progress.RawProgress["TotalBytes"] = bytesToSI(pvb.Status.Progress.TotalBytes)
+		progress.RawProgress["BytesDone"] = bytesToSI(pvb.Status.Progress.BytesDone)
+	}
+	return progress
+}
+
 // Get whether a backup has completed on the source cluster.
 func (t *Task) hasBackupCompleted(backup *velero.Backup) (bool, []string) {
 	completed := false
 	reasons := []string{}
-	progress := []string{}
+	var progress []migapi.Progress
 
 	pvbs := t.getPodVolumeBackupsForBackup(backup)
 
-	getPodVolumeBackupsProgress := func(pvbList *velero.PodVolumeBackupList) (progress []string) {
-		m, keys, msg := make(map[string]string), make([]string, 0), ""
+	getPodVolumeBackupsProgress := func(pvbList *velero.PodVolumeBackupList) (progress []migapi.Progress) {
+		m, keys, msg := make(map[string]migapi.Progress), make([]string, 0), migapi.Progress{}
 		for _, pvb := range pvbList.Items {
 			switch pvb.Status.Phase {
 			case velero.PodVolumeBackupPhaseInProgress:
-				msg = fmt.Sprintf(
+				msg = t.Message(pvb, fmt.Sprintf(
 					"PodVolumeBackup %s/%s: %s out of %s backed up (%s)",
 					pvb.Namespace,
 					pvb.Name,
 					bytesToSI(pvb.Status.Progress.BytesDone),
 					bytesToSI(pvb.Status.Progress.TotalBytes),
-					time.Now().Sub(pvb.Status.StartTimestamp.Time))
+					time.Now().Sub(pvb.Status.StartTimestamp.Time)))
 			case velero.PodVolumeBackupPhaseCompleted:
-				msg = fmt.Sprintf(
+				msg = t.Message(pvb, fmt.Sprintf(
 					"PodVolumeBackup %s/%s: Completed, %s backed up (%s)",
 					pvb.Namespace,
 					pvb.Name,
 					bytesToSI(pvb.Status.Progress.TotalBytes),
-					pvb.Status.CompletionTimestamp.Sub(pvb.Status.StartTimestamp.Time))
+					pvb.Status.CompletionTimestamp.Sub(pvb.Status.StartTimestamp.Time)))
+
 			case velero.PodVolumeBackupPhaseFailed:
-				msg = fmt.Sprintf(
+				msg = t.Message(pvb, fmt.Sprintf(
 					"PodVolumeBackup %s/%s: Failed (%s)",
 					pvb.Namespace,
 					pvb.Name,
-					pvb.Status.CompletionTimestamp.Sub(pvb.Status.StartTimestamp.Time))
+					pvb.Status.CompletionTimestamp.Sub(pvb.Status.StartTimestamp.Time)))
 			default:
-				msg = fmt.Sprintf(
+				msg.Message = fmt.Sprintf(
 					"PodVolumeBackup %s/%s: Waiting for ongoing volume backup(s) to complete",
 					pvb.Namespace,
 					pvb.Name)
@@ -208,35 +230,61 @@ func (t *Task) hasBackupCompleted(backup *velero.Backup) (bool, []string) {
 		}
 		return
 	}
-
 	switch backup.Status.Phase {
 	case velero.BackupPhaseNew:
-		progress = append(
-			progress,
-			fmt.Sprintf(
+		progress = append(progress, migapi.Progress{
+			Message: fmt.Sprintf(
 				"Backup %s/%s: Not started yet",
 				backup.Namespace,
-				backup.Name))
+				backup.Name),
+			CreatedTimestamp: backup.Status.StartTimestamp,
+			LastUpdated:      &metav1.Time{Time: time.Now()},
+			RawProgress: map[string]string{
+				"Kind":      backup.Kind,
+				"Name":      backup.Name,
+				"Namespace": backup.Namespace,
+			},
+		})
 	case velero.BackupPhaseInProgress:
 		progress = append(
-			progress,
-			fmt.Sprintf(
-				"Backup %s/%s: %d out of estimated total of %d objects backed up",
-				backup.Namespace,
-				backup.Name,
-				backup.Status.Progress.ItemsBackedUp,
-				backup.Status.Progress.TotalItems))
+			progress, migapi.Progress{
+				Message: fmt.Sprintf(
+					"Backup %s/%s: %d out of estimated total of %d objects backed up",
+					backup.Namespace,
+					backup.Name,
+					backup.Status.Progress.ItemsBackedUp,
+					backup.Status.Progress.TotalItems),
+				CreatedTimestamp: backup.Status.StartTimestamp,
+				LastUpdated:      &metav1.Time{Time: time.Now()},
+				RawProgress: map[string]string{
+					"Kind":          backup.Kind,
+					"Name":          backup.Name,
+					"Namespace":     backup.Namespace,
+					"ItemsBackedUp": string(backup.Status.Progress.ItemsBackedUp),
+					"TotalItems":    string(backup.Status.Progress.TotalItems),
+				},
+			})
 		progress = append(
 			progress,
 			getPodVolumeBackupsProgress(pvbs)...)
 	case velero.BackupPhaseCompleted:
 		completed = true
 		progress = append(
-			progress,
-			fmt.Sprintf(
-				"Backup %s/%s: Completed",
-				backup.Namespace,
-				backup.Name))
+			progress, migapi.Progress{
+				Message: fmt.Sprintf(
+					"Backup %s/%s: Completed",
+					backup.Namespace,
+					backup.Name),
+				CreatedTimestamp: backup.Status.StartTimestamp,
+				LastUpdated:      backup.Status.CompletionTimestamp,
+				RawProgress: map[string]string{
+					"Kind":          backup.Kind,
+					"Name":          backup.Name,
+					"Namespace":     backup.Namespace,
+					"ItemsBackedUp": string(backup.Status.Progress.ItemsBackedUp),
+					"TotalItems":    string(backup.Status.Progress.TotalItems),
+				},
+			})
 		progress = append(
 			progress,
 			getPodVolumeBackupsProgress(pvbs)...)
@@ -256,9 +304,12 @@ func (t *Task) hasBackupCompleted(backup *velero.Backup) (bool, []string) {
 				"Backup: %s/%s partially failed.",
 				backup.Namespace,
 				backup.Name))
-		reasons = append(
-			reasons,
-			getPodVolumeBackupsProgress(pvbs)...)
+		temp := getPodVolumeBackupsProgress(pvbs)
+		for _, pr := range temp {
+			reasons = append(
+				reasons, pr.Message,
+			)
+		}
 	case velero.BackupPhaseFailedValidation:
 		reasons = backup.Status.ValidationErrors
 		reasons = append(
@@ -381,7 +432,7 @@ func (t *Task) deleteBackups() error {
 
 // Determine whether backups are replicated by velero on the destination cluster.
 func (t *Task) isBackupReplicated(backup *velero.Backup) (bool, error) {
-	progress := []string{}
+	progress := []migapi.Progress{}
 	client, err := t.getDestinationClient()
 	if err != nil {
 		return false, err
@@ -400,12 +451,20 @@ func (t *Task) isBackupReplicated(backup *velero.Backup) (bool, error) {
 	if k8serrors.IsNotFound(err) {
 		err = nil
 		progress = append(
-			progress,
-			fmt.Sprintf(
-				"Backup %s/%s: Not replicated",
-				backup.Namespace,
-				backup.Name,
-			))
+			progress, migapi.Progress{
+				Message: fmt.Sprintf(
+					"Backup %s/%s: Not replicated",
+					backup.Namespace,
+					backup.Name,
+				),
+				CreatedTimestamp: backup.Status.StartTimestamp,
+				LastUpdated:      backup.Status.CompletionTimestamp,
+				RawProgress: map[string]string{
+					"Kind":      backup.Kind,
+					"Name":      backup.Name,
+					"Namespace": backup.Namespace,
+				},
+			})
 	}
 	t.Progress = progress
 	return false, err

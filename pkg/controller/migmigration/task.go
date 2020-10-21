@@ -230,7 +230,7 @@ type Task struct {
 	Annotations     map[string]string
 	BackupResources mapset.Set
 	Phase           string
-	Progress        []string
+	Progress        []migapi.Progress
 	Requeue         time.Duration
 	Itinerary       Itinerary
 	Errors          []string
