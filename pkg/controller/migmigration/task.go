@@ -1126,7 +1126,7 @@ func (t *Task) getBothClientsWithNamespaces() ([]k8sclient.Client, [][]string, e
 
 // Sets condition for an in-progress task
 func (t *Task) setInProgressCondition(progress []string) {
-	step, n, total := t.Itinerary.progressReport(t.Phase)
+	step, n, total, currStep := t.Itinerary.progressReport(t.Phase)
 	t.Owner.Status.SetCondition(migapi.Condition{
 		Type:     Running,
 		Status:   True,
@@ -1134,6 +1134,7 @@ func (t *Task) setInProgressCondition(progress []string) {
 		Category: Advisory,
 		Message:  fmt.Sprintf(RunningMessage, n, total),
 		Progress: progress,
+		Step: 	  currStep,
 	})
 	t.Client.Update(
 		context.TODO(),
