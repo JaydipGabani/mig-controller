@@ -2,6 +2,7 @@ package migmigration
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	mapset "github.com/deckarep/golang-set"
@@ -45,7 +46,8 @@ const (
 	EnsureStagePodsFromTemplates    = "EnsureStagePodsFromTemplates"
 	EnsureStagePodsFromOrphanedPVCs = "EnsureStagePodsFromOrphanedPVCs"
 	StagePodsCreated                = "StagePodsCreated"
-	StagePodsFailed                 = "StagePodsFailed"
+	SourceStagePodsFailed           = "SourceStagePodsFailed"
+	DestinationStagePodsFailed      = "DestinationStagePodsFailed"
 	RestartRestic                   = "RestartRestic"
 	ResticRestarted                 = "ResticRestarted"
 	QuiesceApplications             = "QuiesceApplications"
@@ -447,12 +449,12 @@ func (t *Task) Run() error {
 			return liberr.Wrap(err)
 		}
 	case StagePodsCreated:
-		report, err := t.ensureStagePodsStarted()
+		report, err := t.ensureSourceStagePodsStarted()
 		if err != nil {
 			return liberr.Wrap(err)
 		}
 		if report.failed {
-			t.fail(StagePodsFailed, report.reasons)
+			t.fail(SourceStagePodsFailed, report.reasons)
 			break
 		}
 		if report.started {
@@ -601,6 +603,14 @@ func (t *Task) Run() error {
 		}
 		if restore == nil {
 			return errors.New("Restore not found")
+		}
+		report, err := t.ensureDestinationStagePodsStarted()
+		if err != nil {
+			return liberr.Wrap(err)
+		}
+		if report.failed {
+			t.fail(DestinationStagePodsFailed, report.reasons)
+			break
 		}
 		completed, reasons := t.hasRestoreCompleted(restore)
 		if completed {
@@ -1112,4 +1122,20 @@ func (t *Task) getBothClientsWithNamespaces() ([]k8sclient.Client, [][]string, e
 	namespaceList := [][]string{t.sourceNamespaces(), t.destinationNamespaces()}
 
 	return clientList, namespaceList, nil
+}
+
+// Sets condition for an in-progress task
+func (t *Task) setInProgressCondition(progress []string) {
+	step, n, total := t.Itinerary.progressReport(t.Phase)
+	t.Owner.Status.SetCondition(migapi.Condition{
+		Type:     Running,
+		Status:   True,
+		Reason:   step,
+		Category: Advisory,
+		Message:  fmt.Sprintf(RunningMessage, n, total),
+		Progress: progress,
+	})
+	t.Client.Update(
+		context.TODO(),
+		t.Owner)
 }

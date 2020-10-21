@@ -403,13 +403,28 @@ func (t *Task) ensureStagePodsFromRunning() error {
 	return nil
 }
 
-// Ensure the stage pods are Running.
-func (t *Task) ensureStagePodsStarted() (report PodStartReport, err error) {
+// Ensure the stage pods are Running on source cluster.
+func (t *Task) ensureSourceStagePodsStarted() (report PodStartReport, err error) {
 	client, err := t.getSourceClient()
 	if err != nil {
 		err = liberr.Wrap(err)
 		return
 	}
+	return t.stagePodReport(client)
+}
+
+// Ensure the stage pods are Running on destination cluster.
+func (t *Task) ensureDestinationStagePodsStarted() (report PodStartReport, err error) {
+	client, err := t.getDestinationClient()
+	if err != nil {
+		err = liberr.Wrap(err)
+		return
+	}
+	return t.stagePodReport(client)
+}
+
+func (t *Task) stagePodReport(client k8sclient.Client) (report PodStartReport, err error) {
+	progress := []string{}
 	hasHealthyClaims := func(pod *corev1.Pod) (healthy bool) {
 		healthy = true
 		for _, vol := range pod.Spec.Volumes {
@@ -464,16 +479,37 @@ func (t *Task) ensureStagePodsStarted() (report PodStartReport, err error) {
 	if err != nil {
 		return
 	}
+	report.started = true
 	for _, pod := range podList.Items {
-		if pod.Status.Phase != corev1.PodRunning {
+		ready := true
+		for _, c := range pod.Status.ContainerStatuses {
+			if !c.Ready {
+				ready = false
+			}
+		}
+		if !ready {
+			progress = append(
+				progress,
+				fmt.Sprintf(
+					"Stage Pod %s/%s: Not running. Phase %s",
+					pod.Namespace,
+					pod.Name,
+					pod.Status.Phase))
+			report.started = false
 			if !hasHealthyClaims(&pod) {
 				report.failed = true
 			}
-			return
+		} else {
+			progress = append(
+				progress,
+				fmt.Sprintf(
+					"Stage Pod %s/%s: Running",
+					pod.Namespace,
+					pod.Name))
+
 		}
 	}
-
-	report.started = true
+	t.Progress = progress
 	return
 }
 
@@ -504,12 +540,12 @@ func (t *Task) ensureStagePodsDeleted() error {
 				pod.Name)
 		}
 	}
-
 	return nil
 }
 
 // Ensure the deleted stage pods have finished terminating
 func (t *Task) ensureStagePodsTerminated() (bool, error) {
+	progress := []string{}
 	clients, err := t.getBothClients()
 	if err != nil {
 		return false, liberr.Wrap(err)
@@ -521,6 +557,7 @@ func (t *Task) ensureStagePodsTerminated() (bool, error) {
 		corev1.PodUnknown:   true,
 	}
 	options := k8sclient.MatchingLabels(t.Owner.GetCorrelationLabels())
+	terminated := true
 	for _, client := range clients {
 		podList := corev1.PodList{}
 		err := client.List(context.TODO(), options, &podList)
@@ -530,13 +567,28 @@ func (t *Task) ensureStagePodsTerminated() (bool, error) {
 		for _, pod := range podList.Items {
 			// looks like it's terminated
 			if terminatedPhases[pod.Status.Phase] {
-				continue
+				progress = append(
+					progress,
+					fmt.Sprintf(
+						"Stage Pod %s/%s: Not terminated yet",
+						pod.Namespace,
+						pod.Name))
+			} else {
+				progress = append(
+					progress,
+					fmt.Sprintf(
+						"Stage Pod %s/%s: Not terminated yet",
+						pod.Namespace,
+						pod.Name))
+				terminated = false
 			}
-			return false, nil
 		}
 	}
-	t.Owner.Status.DeleteCondition(StagePodsCreated)
-	return true, nil
+	if terminated {
+		t.Owner.Status.DeleteCondition(StagePodsCreated)
+	}
+	t.Progress = progress
+	return terminated, nil
 }
 
 func (t *Task) stagePodLabels() map[string]string {
