@@ -474,6 +474,9 @@ func (t *Task) Run() error {
 		} else {
 			t.Requeue = PollReQ
 		}
+		if len(report.progress) > 0 {
+			t.setProgress(report.progress)
+		}
 	case RestartRestic:
 		err := t.restartResticPods()
 		if err != nil {

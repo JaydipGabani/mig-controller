@@ -45,6 +45,8 @@ type PodStartReport struct {
 	reasons []string
 	// all pods started.
 	started bool
+	// Progress of the stage pod
+	progress []string
 }
 
 // BuildStagePods - creates a list of stage pods from a list of pods
@@ -482,24 +484,36 @@ func (t *Task) stagePodReport(client k8sclient.Client) (report PodStartReport, e
 	}
 	report.started = true
 	for _, pod := range podList.Items {
+		initReady := true
+		for _, c := range pod.Status.InitContainerStatuses {
+			// If the init contianer is waiting, then nothing can happen.
+			if c.State.Waiting != nil {
+				initReady = false
+				progress = append(progress, c.State.Waiting.Message)
+				report.started = false
+			}
+		}
+		if !initReady {
+			// If init container is running warn the user.
+			report.progress = progress
+			return
+		}
 		ready := false
 		for _, c := range pod.Status.ContainerStatuses {
-			if c.Ready {
+			if c.State.Running != nil {
+				// if a single container is running in the pod assume that the pod has started.
 				ready = true
 				break
 			}
+			if c.State.Waiting != nil {
+				progress = append(progress, c.State.Waiting.Message)
+			}
 		}
 		if !ready {
-			progress = append(
-				progress,
-				fmt.Sprintf(
-					"Pod %s/%s: Not running. Phase %s",
-					pod.Namespace,
-					pod.Name,
-					pod.Status.Phase))
 			report.started = false
 			if !hasHealthyClaims(&pod) {
 				report.failed = true
+				return
 			}
 		} else {
 			progress = append(
@@ -511,7 +525,7 @@ func (t *Task) stagePodReport(client k8sclient.Client) (report PodStartReport, e
 
 		}
 	}
-	t.setProgress(progress)
+	report.progress = progress
 	return
 }
 
