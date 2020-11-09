@@ -580,7 +580,7 @@ func (t *Task) allStagePodsMatch() (report []string, err error) {
 		err = liberr.Wrap(err)
 		return
 	}
-	if len(stageReport.progress) > 0{
+	if !stageReport.started {
 		report = stageReport.progress
 		return
 	}
