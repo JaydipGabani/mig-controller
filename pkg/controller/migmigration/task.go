@@ -2,7 +2,6 @@ package migmigration
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	mapset "github.com/deckarep/golang-set"

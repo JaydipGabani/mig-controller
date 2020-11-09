@@ -529,6 +529,65 @@ func (t *Task) stagePodReport(client k8sclient.Client) (report PodStartReport, e
 	return
 }
 
+// Match number of stage pods in source and destination cluster
+func (t *Task) allStagePodsMatch() (report []string, err error) {
+	dClient, err := t.getDestinationClient()
+	if err != nil {
+		err = liberr.Wrap(err)
+		return
+	}
+
+	podDList := corev1.PodList{}
+
+	options := k8sclient.MatchingLabels(t.stagePodLabels())
+	err = dClient.List(context.TODO(), options, &podDList)
+	if err != nil {
+		err = liberr.Wrap(err)
+		return
+	}
+	sClient, err := t.getSourceClient()
+	if err != nil {
+		err = liberr.Wrap(err)
+		return
+	}
+	podSList := corev1.PodList{}
+	err = sClient.List(context.TODO(), options, &podSList)
+
+	var dPods []string
+
+	for _, pod := range podDList.Items{
+		dPods = append(dPods, pod.Name)
+	}
+
+	for _, pod := range podSList.Items{
+		flag := 0
+		for _, name := range dPods {
+			if name == pod.Name {
+				flag = 1
+				break
+			}
+		}
+		if flag == 0{
+			report = append(report, pod.Name + " is missing. Migration might fail")
+		}
+	}
+	if  len(report) > 0{
+		return
+	}
+
+	stageReport, err := t.ensureDestinationStagePodsStarted()
+	if err != nil {
+		err = liberr.Wrap(err)
+		return
+	}
+	if len(stageReport.progress) > 0{
+		report = stageReport.progress
+		return
+	}
+	report = []string{"All the stage pods are restored, waiting for restore to Complete"}
+	return
+}
+
 // Ensure the stage pods have been deleted.
 func (t *Task) ensureStagePodsDeleted() error {
 	srcClient, err := t.getSourceClient()
