@@ -553,21 +553,20 @@ func (t *Task) allStagePodsMatch() (report []string, err error) {
 	podSList := corev1.PodList{}
 	err = sClient.List(context.TODO(), options, &podSList)
 
-	var dPods []string
+	dPods := make(map[string]string)
 
 	for _, pod := range podDList.Items{
-		dPods = append(dPods, pod.Name)
+		dPods[pod.Name] = pod.Name
 	}
 
 	for _, pod := range podSList.Items{
-		flag := 0
-		for _, name := range dPods {
-			if name == pod.Name {
-				flag = 1
-				break
-			}
+		isMissing := 0
+		if _, exist := dPods[pod.Name]; exist{
+			continue
+		} else {
+			isMissing = 1
 		}
-		if flag == 0{
+		if isMissing == 0{
 			report = append(report, pod.Name + " is missing. Migration might fail")
 		}
 	}
