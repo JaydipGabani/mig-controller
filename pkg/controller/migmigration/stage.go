@@ -554,7 +554,9 @@ func (t *Task) stagePodReport(client k8sclient.Client) (report PodStartReport, e
 
 // Match number of stage pods in source and destination cluster
 func (t *Task) allStagePodsMatch() (report []string, err error) {
+
 	dstClient, err := t.getDestinationClient()
+
 	if err != nil {
 		err = liberr.Wrap(err)
 		return
@@ -563,17 +565,22 @@ func (t *Task) allStagePodsMatch() (report []string, err error) {
 	podDList := corev1.PodList{}
 
 	options := k8sclient.MatchingLabels(t.stagePodLabels())
+
 	err = dstClient.List(context.TODO(), options, &podDList)
+
 	if err != nil {
 		err = liberr.Wrap(err)
 		return
 	}
+
 	srcClient, err := t.getSourceClient()
+
 	if err != nil {
 		err = liberr.Wrap(err)
 		return
 	}
 	podSList := corev1.PodList{}
+
 	err = srcClient.List(context.TODO(), options, &podSList)
 
 	dPods := make(map[string]string)
