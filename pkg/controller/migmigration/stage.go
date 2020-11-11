@@ -554,46 +554,46 @@ func (t *Task) stagePodReport(client k8sclient.Client) (report PodStartReport, e
 
 // Match number of stage pods in source and destination cluster
 func (t *Task) allStagePodsMatch() (report []string, err error) {
-
 	dstClient, err := t.getDestinationClient()
-
-	if err != nil {
-		err = liberr.Wrap(err)
-		return
-	}
-
-	podDList := corev1.PodList{}
-
-	options := k8sclient.MatchingLabels(t.stagePodLabels())
-
-	err = dstClient.List(context.TODO(), options, &podDList)
-
 	if err != nil {
 		err = liberr.Wrap(err)
 		return
 	}
 
 	srcClient, err := t.getSourceClient()
-
 	if err != nil {
 		err = liberr.Wrap(err)
 		return
 	}
-	podSList := corev1.PodList{}
 
-	err = srcClient.List(context.TODO(), options, &podSList)
+	for _, srcNamespace := range t.PlanResources.MigPlan.GetSourceNamespaces() {
+		podDList := corev1.PodList{}
+		podSList := corev1.PodList{}
+		options := k8sclient.MatchingLabels(t.stagePodLabels()).InNamespace(srcNamespace)
+		err = dstClient.List(context.TODO(), options, &podDList)
+		if err != nil {
+			err = liberr.Wrap(err)
+			return
+		}
 
-	dPods := make(map[string]string)
+		err = srcClient.List(context.TODO(), options, &podSList)
+		if err != nil {
+			err = liberr.Wrap(err)
+			return
+		}
+		dPods := make(map[string]string)
 
-	for _, pod := range podDList.Items {
-		dPods[pod.Name] = pod.Name
-	}
+		for _, pod := range podDList.Items {
+			dPods[pod.Name] = pod.Name
+		}
 
-	for _, pod := range podSList.Items {
-		if _, exist := dPods[pod.Name]; !exist {
-			report = append(report, pod.Name+" is missing. Migration might fail")
+		for _, pod := range podSList.Items {
+			if _, exist := dPods[pod.Name]; !exist {
+				report = append(report, pod.Name+" is missing. Migration might fail")
+			}
 		}
 	}
+
 	if len(report) > 0 {
 		return
 	}
