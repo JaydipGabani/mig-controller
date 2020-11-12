@@ -583,10 +583,15 @@ func (t *Task) allStagePodsMatch() (report []string, err error) {
 	}
 
 	for _, pod := range podSList.Items {
-		if _, exist := dPods[pod.Name]; !exist {
-			report = append(report, pod.Name+" is missing. Migration might fail")
+		for _, srcNamespace := range t.PlanResources.MigPlan.GetSourceNamespaces() {
+			if pod.Namespace == srcNamespace {
+				if _, exist := dPods[pod.Name]; !exist {
+					report = append(report, pod.Name+" is missing. Migration might fail")
+				}
+			}
 		}
 	}
+
 	if len(report) > 0 {
 		return
 	}
