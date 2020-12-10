@@ -133,28 +133,27 @@ func (t *Task) generateSSHKeys() error {
 	return nil
 }
 
-func (t *Task) createRsyncConfig() (bool, error) {
+func (t *Task) createRsyncConfig() error {
 	// Get client for destination
 	destClient, err := t.getDestinationClient()
 	if err != nil {
-		return false, err
+		return err
 	}
 	// Get client for source
 	srcClient, err := t.getSourceClient()
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	password, err := t.getRsyncPassword()
 	if err != nil {
-		return false, err
+		return err
 	}
 	if password == "" {
-		err = t.createRsyncPassword()
+		password, err = t.createRsyncPassword()
 		if err != nil {
-			return false, err
+			return err
 		}
-		return false, nil
 	}
 	if password == "" {
 		password, err = t.createRsyncPassword()
@@ -184,11 +183,11 @@ func (t *Task) createRsyncConfig() (bool, error) {
 		var tpl bytes.Buffer
 		temp, err := template.New("config").Parse(rsyncConfigTemplate)
 		if err != nil {
-			return false, err
+			return err
 		}
 		err = temp.Execute(&tpl, rsyncConf)
 		if err != nil {
-			return false, err
+			return err
 		}
 
 		configMap := corev1.ConfigMap{
@@ -202,7 +201,7 @@ func (t *Task) createRsyncConfig() (bool, error) {
 		}
 		err = yaml.Unmarshal(tpl.Bytes(), &configMap)
 		if err != nil {
-			return false, err
+			return err
 		}
 
 		// Create configmap on source + dest
@@ -213,7 +212,7 @@ func (t *Task) createRsyncConfig() (bool, error) {
 		if k8serror.IsAlreadyExists(err) {
 			t.Log.Info("Configmap already exists on destination", "namespace", configMap.Namespace)
 		} else if err != nil {
-			return false, err
+			return err
 		}
 
 		// Before starting rsync transfer pod, must generate rsync password in a
@@ -244,7 +243,7 @@ func (t *Task) createRsyncConfig() (bool, error) {
 		if k8serror.IsAlreadyExists(err) {
 			t.Log.Info("Secret already exists on source", "namespace", srcSecret.Namespace)
 		} else if err != nil {
-			return false, err
+			return err
 		}
 		destSecret := corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -262,7 +261,7 @@ func (t *Task) createRsyncConfig() (bool, error) {
 		if k8serror.IsAlreadyExists(err) {
 			t.Log.Info("Secret already exists on destination", "namespace", destSecret.Namespace)
 		} else if err != nil {
-			return false, err
+			return err
 		}
 	}
 
@@ -272,7 +271,7 @@ func (t *Task) createRsyncConfig() (bool, error) {
 	// Also in this rsyncd configmap, include all PVC mount paths, see:
 	// https://github.com/konveyor/pvc-migrate/blob/master/3_run_rsync/templates/rsyncd.yml.j2#L23
 
-	return true, nil
+	return nil
 }
 
 // Create rsync transfer route
