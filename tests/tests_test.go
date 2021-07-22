@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/labels"
 	"log"
 	"path"
 	"strings"
@@ -15,7 +16,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -88,13 +88,13 @@ var _ = Describe("Running migmigration when storage, cluster and plan are ready"
 						podCmd := pods.PodCommand{
 							Pod:     &p,
 							RestCfg: sourceCfg,
-							Args:    []string{"sh", "-c", "dd if=/dev/zero of=/" + testFilePath + "file_1 bs=60M count=1"},
+							Args: []string {"sh", "-c", "/usr/local/bin/generate_sample.sh -d /data/test -m 10"},
 						}
 						err = podCmd.Run()
 						if err != nil {
 							log.Println(err, "Failed running ls command inside destination Pod",
-								"pod", path.Join(p.Namespace, p.Name),
-								"command", "dd if=/dev/zero of=/"+testFilePath+"/file_1 bs=60M count=1;")
+								path.Join(p.Namespace, p.Name),
+								"command", "/usr/local/bin/generate_sample.sh -d "+testFilePath+" -m 10")
 						}
 					}
 					log.Println(fmt.Sprintf("Waiting for pod %s to be ready, currently in phase - %s", p.Name, p.Status.Phase))
@@ -137,6 +137,7 @@ var _ = Describe("Running migmigration when storage, cluster and plan are ready"
 							dvmps := &migapi.DirectVolumeMigrationProgressList{}
 							Expect(hostClient.List(ctx, dvmps, client.MatchingLabels{"directvolumemigration": string(dvm.UID)})).Should(Succeed())
 							for _, dvmp := range dvmps.Items {
+								Expect(dvmp.Status.HasCondition(migapi.ReconcileFailed)).ShouldNot(BeTrue())
 								if dvmp.Status.TotalProgressPercentage == "100%" {
 									return dvm.Status.Phase
 								}
@@ -173,13 +174,13 @@ var _ = Describe("Running migmigration when storage, cluster and plan are ready"
 					podCmd := pods.PodCommand{
 						Pod:     &p,
 						RestCfg: hostCfg,
-						Args:    []string{"sh", "-c", "ls -l " + testFilePath},
+						Args:    []string{"sh", "-c", "cd " + testFilePath + "&& md5sum *"},
 					}
 					err = podCmd.Run()
 					if err != nil {
 						log.Println(err, "Failed running ls command inside destination Pod",
 							"pod", path.Join(p.Namespace, p.Name),
-							"command", "ls -l "+testFilePath)
+							"command", "cd "+testFilePath+"&& md5sum *")
 					}
 					destinationFile = strings.Split(podCmd.Out.String(), " ")
 					break
@@ -195,21 +196,22 @@ var _ = Describe("Running migmigration when storage, cluster and plan are ready"
 					podCmd := pods.PodCommand{
 						Pod:     &p,
 						RestCfg: sourceCfg,
-						Args:    []string{"sh", "-c", "ls -l " + testFilePath},
+						Args:    []string{"sh", "-c", "cd " + testFilePath+"&& md5sum *"},
 					}
 					err = podCmd.Run()
 					if err != nil {
 						log.Println(err, "Failed running ls command inside source Pod",
 							"pod", path.Join(p.Namespace, p.Name),
-							"command", "ls -l "+testFilePath)
+							"command", "cd "+testFilePath+"&& md5sum *")
 					}
 					sourceFile := strings.Split(podCmd.Out.String(), " ")
-					if len(sourceFile) > 0 && len(destinationFile) > 0 {
-						if sourceFile[0] == destinationFile[0] && sourceFile[len(sourceFile)-1] == destinationFile[len(destinationFile)-1] {
-							return true
-						}
+					if len(destinationFile) == 1 {
+						return false
 					}
-					return false
+					for i, v := range destinationFile {
+						Expect(v).Should(BeEquivalentTo(sourceFile[i]))
+					}
+					return true
 				}
 				return false
 			}, time.Minute*5, time.Second).Should(Equal(true))

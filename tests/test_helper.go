@@ -297,13 +297,25 @@ func NewDeploymentFor41583() *appsv1.Deployment {
 						{
 							Name:            "pod-test",
 							ImagePullPolicy: "Always",
-							Image:           "quay.io/openshifttest/alpine",
-							Command:         []string{"/bin/sh", "-c", "--"},
-							Args:            []string{"while true; do sleep 30; done;"},
+							Image:           "quay.io/konveyor/pvc-migrate-benchmark-helper:latest",
 							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "testvolume",
 									MountPath: "/data/test",
+								},
+							},
+							Env: []v1.EnvVar {
+								{
+									Name: "GENERATE_SAMPLE_DATA",
+									Value: "N",
+								},
+								{
+									Name: "NO_FILES",
+									Value: "3",
+								},
+								{
+									Name: "FILE_SIZE",
+									Value: "10",
 								},
 							},
 						},
